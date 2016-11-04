@@ -9,11 +9,13 @@ The main idea is very simple: with python scapy I can sniff packets, that offici
 ### Advantages
 * It's completely free and opensource. 
 * The code is very compact, simple and readable.
+* I hope, it will support new devices, that can't be used with old sdk.
 * It hasn't any exotic dependencies as chineese SDK.
 * Obliviously, it's portable. It should be working on MacOS, Linux, Windows.
 
 ### Disadvantages
 * It needs you to install python and libraries to your android device with official application to scan codes
+* It's more complicated to setup than httpbridge, because you should learn broadlink with official application and then scan codes (more operations).
 
 ### Notices
 So, at the moment I'm using httpbridge 2.2 by altron as a packets source. 
