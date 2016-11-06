@@ -9,24 +9,25 @@ The main idea is very simple: with python scapy I can sniff packets, that offici
 ### Advantages
 * It's completely free and opensource. 
 * The code is very compact, simple and readable.
-* I hope, it will support new devices, that can't be used with old sdk.
+* It's support new devices, at least Broadlink MP1. I can't test with others, because I haven't them.
 * It hasn't any exotic dependencies as chineese SDK.
 * Obliviously, it's portable. It should be working on MacOS, Linux, Windows.
 
 ### Disadvantages
 * It needs you to install python and libraries to your android device with official application to scan codes
 * It's more complicated to setup than httpbridge, because you should learn broadlink with official application and then scan codes (more operations).
+* As I recently learned from 4pda forum, working scheme for sockets SP1, SP2, SP3 is differ, so program shouldn't working with these sockets. Maybe I'll bye one for add functionality.
 
 ### Notices
-So, at the moment I'm using httpbridge 2.2 by altron as a packets source. 
+So, at the moment packet scanning rowking with httpbridge 2.2 by altron and e-Control.
 
-### Plans:
-1. switching to the official broadlink application
-2. testing with Broadlink MP1 (because I have it)
-3. method for loading pcap dumps
-4. method for loading packet capture dumps
-5. making api support with bottle framework
-6. making compatible with python3
+### Plans and progress:
+1. switching to the official broadlink application ... Done
+2. testing with Broadlink MP1 (because I have it) ... Done
+3. main functionality ... In progress
+4. method for loading pcap dumps
+5. method for loading packet capture dumps
+6. making api support with bottle framework
 7. making setup script to install dependencies
 8. making subrepository with saved codes
 

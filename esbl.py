@@ -2,7 +2,7 @@
 #
 # Broadlink python module by Evgeniy Shumilov <evgeniy.shumilov@gmail.com
 #
->
+
 import re
 from os import urandom
 from sys import exit
@@ -21,7 +21,7 @@ class bl:
             self.host = host
             self.port = port
             self.mac = mac
-            self.cache = {}
+            self.pref='5aa5aa555aa5aa55000000000000000000000000000000000000000000000000'
             self.exclude = ('86bf0000aa2af58702019c0ed0c51b3475a0d309', '26c200005499c2b90027ccbd581e4794641597a9', '60b320e4c786a7152a368820c1ea4aa35be4ab17')
         else:
             self.__err__('Error: host or port is empty', 1)
@@ -29,6 +29,12 @@ class bl:
         self.path = os.path.join(os.getcwd(), 'codes')
         if not os.path.exists(self.path):
             os.mkdir(self.path)
+        self.path = os.path.join(os.getcwd(), 'codes', self.mac)
+        if not os.path.exists(self.path):
+            os.mkdir(self.path)
+        self.codes = self.loadCodes()
+        self.scanned = []
+        
 
     @staticmethod
     def __err__(msg, code=0):
@@ -61,6 +67,15 @@ class bl:
         return res
 
     @staticmethod
+    def __randomHex__(length=4):
+        res = ''
+        map = {0: '0', 1:'1', 2:'2', 3:'3', 4:'4', 5:'5', 6:'6', 7:'7', 8:'8', 9:'9', 10:'a',
+            11:'b', 12:'c', 13:'d', 14:'e', 15:'f'}
+        for i in xrange(length):
+            res += map[random.randint(0,15)]
+        return res
+
+    @staticmethod
     def __getPayload__(packet):
         if packet:
             if 'load' in packet[3].fields.keys():
@@ -81,8 +96,7 @@ class bl:
         if ip:
             mac = arping(ip)
             try:
-                mac = mac[0][0][1].fields['dst']
-                print mac
+                mac = mac[0][0][1].fields['src']
                 return mac
             except:
                 self.__err__('Error: can\'t get mac address from ip', 2)
@@ -90,40 +104,33 @@ class bl:
             self.__err__('Error: can\'t get mac address from ip', 2)
 
     def __pktCheck__(self, pkt):
-        #try:
-        if pkt[2].name == 'UDP':
-            pl = self.__str2hex__(pkt[3].fields['load'])
-            ind = pl[-40:]
-            if not ind in self.exclude and pl.startswith('5aa5aa555'):
-                if not self.c2.has_key(ind):
-                    if self.c1.has_key(ind):
-                        self.c2[ind] = (self.c1.pop(ind), pl)
-                    else:
-                        self.c1[ind] = pl
-                    print self.c1
-                    print
-                    print self.c2
-                    print '-------'
-        #except:
-            #self.__wrn__('fail to check sniffed packet')
+        try:
+            if pkt[2].name == 'UDP':
+                pl = self.__str2hex__(pkt[3].fields['load'])
+                ind = pl[-40:]
+                code = pl[72:78]+pl[84:]
+                if not ind in self.exclude and pl.startswith(self.pref):
+                    if not code in self.codes.values():
+                        self.scanned.append(code)
+                        self.codes[code] = code
+                        self.storeCode(code)
+                        print 'Got new code:', code
+        except:
+            self.__wrn__('fail to check sniffed packet')
 
     @staticmethod
     def compare(code1, code2):
         ''' Compare two codes for similarity '''
-        diff = 0
+        indexes = []
         l = min(len(code1), len(code2))
         for c in xrange(l):
             if code1[c] != code2[c]:
-                diff += 1
-        if float(l-diff)/l > 0.92:
+                indexes.append(c)
+        print "Indexes:", indexes
+        if float(l-len(indexes))/l > 0.92:
             return True
         else:
             return False
-
-    def scanCodes(self):
-        self.c1 = {}
-        self.c2 = {}
-        sniff(filter=self.filter, prn=self.__pktCheck__)
 
     def __saveToFile__(self, name, cont):
         if name and cont:
@@ -145,43 +152,71 @@ class bl:
             self.__wrn__('empty file name for save')
             return ''
 
-    def storeCode(self, name):
+    def scanCodes(self):
+        self.scanned = []
+        sniff(filter=self.filter, prn=self.__pktCheck__)
+
+    def loadCodes(self):
+        codes = {}
+        for fn in os.listdir(self.path):
+            codes[fn] = self.__loadFromFile__(os.path.join(self.path, fn))
+        return codes
+
+    def makeCode(self, pl):
+        return self.pref + self.__randomHex__() + '0000' + pl[0:6] + '00' + self.__randomHex__() + pl[6:]
+
+    def storeCode(self, code, name=''):
         if name:
-            pkts=sniff(filter=self.filter, count=2)
-            res=[]
-            res.append(self.__getHexPayload__(pkts[0]))
-            res.append(self.__getHexPayload__(pkts[1]))
-            self.__saveToFile__(name, res[0] + ' ' + res[1])
-            self.__saveToFile__(name + '_l', '0')
-            return
+            nm = name[:]
         else:
-            self.__wrn__('empty code name to save')
+            nm = code
+        if code:
+            self.__saveToFile__(os.path.join(self.path, nm), code)
+        return nm
 
     def sendCode(self, name):
         if name:
-            codes = self.__loadFromFile__(name)
-            last = self.__loadFromFile__(name + '_l')
-            if codes and last:
-                last = int(last)
-                if last:
-                    self.__saveToFile__(name + '_l', '0')
-                else:
-                    self.__saveToFile__(name + '_l', '1')
-                self.brs(self.__hex2str__(codes.split(' ')[last]))
+            if self.codes.has_key(name):
+                code = self.codes[name]
             else:
-                self.__wrn__('can\'t load code to send')
+                code = name
+            self.brs(self.__hex2str__(self.makeCode(code)))
         else:
             self.__wrn__('empty code name to send')
 
-b = bl('10.11.11.18')
+    def renameCode(self, oldname, newname):
+        if oldname and newname and os.path.exists(os.path.join(self.path, oldname)):
+            os.rename(os.path.join(self.path, oldname), os.path.join(self.path, newname))
+            self.codes[newname] = self.codes.pop(oldname)
+        else:
+            self.__wrn__('file name for renaming is empty or file not exists')
 
-b.scanCodes()
+    def removeCode(self, name):
+        if name:
+            pth = os.path.join(self.path, name)
+            if os.path.exists(pth):
+                os.remove(pth)
+            if self.codes.has_key(name):
+                code = self.codes[name]
+                if code in self.scanned:
+                    self.scanned.remove(code)
+                self.codes.pop(name)
+        else:
+            self.__wrn__('empty code name to remove')
 
-#TODO: Move codes to the devicemac_devicename folders
-#TODO: Load codes from filesystem to c1, c2 caches before scan
+    def showCode(self, name):
+        if name:
+            if self.codes.has_key(name):
+                print name, self.codes[name]
+            else:
+                print "Code with this name is hot exists"
+        else:
+            self.__wrn__('empty code name to show')
+
+b = bl('10.11.11.19')
+
 #TODO: Research method for scan network for detecting broadlink devices
-#TODO: Make autosaving codes to the filesystem
 #TODO: Device -> scan, rename, list, listcodes
-#TODO: Code -> rename, remove, import, export
+#TODO: Code -> import, export
 #TODO: Codes -> import, export, import from dump
 
