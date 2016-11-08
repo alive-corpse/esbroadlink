@@ -23,7 +23,7 @@ class bl:
             self.port = port
             self.mac = mac
             self.pref='5aa5aa555aa5aa55000000000000000000000000000000000000000000000000'
-            self.exclude = ('86bf0000aa2af58702019c0ed0c51b3475a0d309', '26c200005499c2b90027ccbd581e4794641597a9', '60b320e4c786a7152a368820c1ea4aa35be4ab17', '5cf9e42edf60732b2fdb53ff1901c5439d5502a1')
+            self.exclude = ('d309', '97a9', 'ab17', '02a1')
         else:
             self.__err__('Error: host or port is empty', 1)
         self.filter = 'udp and ether host %s and dst port %s' % (self.mac, self.port)
@@ -90,26 +90,26 @@ class bl:
             self.__err__('Error: can\'t get mac address from ip', 2)
 
     def __pktCheck__(self, pkt):
-        #try:
-        if pkt[2].name == 'UDP':
-            pl = pkt[3].fields['load'].encode('hex')
-            ind = pl[-40:]
-            if len(pl) > self.limit:
-                code = pl[72:78]+pl[84:] # codes for rm*
-            else:
-                code = pl[66:80]+pl[82:] # codes for sp*/mp*
-            if not ind in self.exclude and pl.startswith(self.pref):
-                if not code in self.codes.values():
-                    self.scanned.append(code)
-                    self.codes[code] = code
-                    self.storeCode(code)
-                    if len(pl) > self.limit:
-                        print 'Got new RM code:', code
-                    else:
-                        print 'Got new SP/MP code:', code
-                    print 'Full payload:', pl
-        #except:
-            #self.__wrn__('fail to check sniffed packet')
+        try:
+            if pkt[2].name == 'UDP':
+                pl = pkt[3].fields['load'].encode('hex')
+                ind = pl[-4:]
+                if len(pl) > self.limit:
+                    code = pl[72:78]+pl[84:] # codes for rm*
+                else:
+                    code = pl[66:80]+pl[82:] # codes for sp*/mp*
+                if not ind in self.exclude and pl.startswith(self.pref):
+                    if not ind in self.codes.keys():
+                        self.scanned.append(code)
+                        self.codes[ind] = code
+                        self.storeCode(code, ind)
+                        if len(pl) > self.limit:
+                            print 'Got new RM code:', code
+                        else:
+                            print 'Got new SP/MP code:', code
+                        print 'Full payload:', pl
+        except:
+            self.__wrn__('fail to check sniffed packet')
 
     def __pktCheckDebug__(self, pkt):
         try:
@@ -178,7 +178,11 @@ class bl:
         return codes
 
     def makeCode(self, src):
-        return self.pref + self.__randomHex__() + '0000' + src[0:6] + '00' + self.__randomHex__() + src[6:]
+        if len(src) < 80:
+            code = self.pref + self.__randomHex__(2) + src[0:14] + self.__randomHex__(2) + src[14:]
+        else:
+            code = self.pref + self.__randomHex__() + '0000' + src[0:6] + '00' + self.__randomHex__() + src[6:]
+        return code
 
     def storeCode(self, code, name=''):
         if name:
@@ -195,8 +199,6 @@ class bl:
                 code = self.codes[name]
             else:
                 code = name
-            if len(code) < 70:
-                pass # Here I should to send wakeup packet
             self.sendPayload(self.makeCode(code))
         else:
             self.__wrn__('empty code name to send')
@@ -230,7 +232,7 @@ class bl:
         else:
             self.__wrn__('empty code name to show')
 
-b = bl('10.11.11.19')
+b = bl('10.11.11.18')
 
 #TODO: Research method for scan network for detecting broadlink devices
 #TODO: Device -> scan, rename, list, listcodes
