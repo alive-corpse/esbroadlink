@@ -22,7 +22,7 @@ class bl:
             self.port = port
             self.mac = mac
             self.pref='5aa5aa555aa5aa55000000000000000000000000000000000000000000000000'
-            self.exclude = ('86bf0000aa2af58702019c0ed0c51b3475a0d309', '26c200005499c2b90027ccbd581e4794641597a9', '60b320e4c786a7152a368820c1ea4aa35be4ab17')
+            self.exclude = ('86bf0000aa2af58702019c0ed0c51b3475a0d309', '26c200005499c2b90027ccbd581e4794641597a9', '60b320e4c786a7152a368820c1ea4aa35be4ab17', '5cf9e42edf60732b2fdb53ff1901c5439d5502a1')
         else:
             self.__err__('Error: host or port is empty', 1)
         self.filter = 'udp and ether host %s and dst port %s' % (self.mac, self.port)
@@ -35,7 +35,6 @@ class bl:
         self.codes = self.loadCodes()
         self.scanned = []
         
-
     @staticmethod
     def __err__(msg, code=0):
         print datetime.strftime(datetime.now(), '%Y.%m.%d %H:%M:%S'), "Error:", msg
@@ -92,6 +91,32 @@ class bl:
         else:
             self.__wrn__('empty payload to send')
 
+    def brsr(self, payload):
+        if payload:
+            p = IP(dst=self.host)/UDP(dport=self.port)
+            p.add_payload(payload)
+            pkt = srp1(p)
+            try:
+                if pkt[2].name == 'UDP':
+                    pl = self.__str2hex__(pkt[3].fields['load'])
+                    log = datetime.strftime(datetime.now(), '%s') + ' %s ' + pl[64:68] + ' ' + pl[80:84] + ' ' + pl[104:].replace('0000', ' ')
+                    if pkt[2].fields['dport'] == self.port:
+                        print log % '<'
+                    else:
+                        print log % '>'
+                    code = pl[72:78]+pl[84:]
+                    if not code in self.dcodes:
+                        self.dcodes.append(code)
+                    self.dpayloads.append(pl)
+                    if self.debug:
+                        print "PL:",pl
+                        print "CODE:",code
+            except:
+                self.__wrn__('fail to check packet') 
+        else:
+            self.__wrn__('empty payload to send')
+            return None
+
     def __getMacByIp__(self, ip):
         if ip:
             mac = arping(ip)
@@ -115,8 +140,39 @@ class bl:
                         self.codes[code] = code
                         self.storeCode(code)
                         print 'Got new code:', code
+                        print 'Full payload:', pl
         except:
             self.__wrn__('fail to check sniffed packet')
+
+    def __pktCheckDebug__(self, pkt):
+        try:
+            if pkt[2].name == 'UDP':
+                pl = self.__str2hex__(pkt[3].fields['load'])
+                if pl.startswith(self.pref) and not pl.endswith('000000000000000000000000000000200'):
+                    log = datetime.strftime(datetime.now(), '%s') + ' %s ' + pl[64:68] + ' ' + pl[80:84] + ' ' + pl[104:].replace('0000', ' ')
+                    if pkt[2].fields['dport'] == self.port:
+                        print log % '<'
+                    else:
+                        print log % '>'
+                    code = pl[72:78]+pl[84:]
+                    if not code in self.dcodes:
+                        self.dcodes.append(code)
+                    self.dpayloads.append(pl)
+                    if self.debug:
+                        print "PL:",pl
+                        print "CODE:",code
+
+        except:
+            self.__wrn__('fail to check sniffed packet')
+
+    def sendPayload(self, payload):
+        self.brs(self.__hex2str__(payload))
+
+    def scanDebug(self, verbose=False):
+        self.dpayloads = []
+        self.dcodes = []
+        f = 'udp and ether host %s and port %s' % (self.mac, str(self.port))
+        self.dscan = sniff(filter=f, prn=self.__pktCheckDebug__)
 
     @staticmethod
     def compare(code1, code2):
@@ -180,6 +236,10 @@ class bl:
                 code = self.codes[name]
             else:
                 code = name
+            if len(code) < 70:
+                self.brs(self.__hex2str__(self.makeCode('b54e6a5a23c10d43b40100000086bf0000aa2af58702019c0ed0c51b3475a0d309')))
+                self.brs(self.__hex2str__(self.makeCode('b54e6a5a23c10d43b40100000026c200005499c2b90027ccbd581e4794641597a9')))
+                self.brs(self.__hex2str__(self.makeCode('b54e6a5a23c10d43b40100000026c200005499c2b90027ccbd581e4794641597a9')))
             self.brs(self.__hex2str__(self.makeCode(code)))
         else:
             self.__wrn__('empty code name to send')
