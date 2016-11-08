@@ -13,6 +13,7 @@ class bl:
 
     def __init__(self, host, port=80, debug=False):
         self.debug = debug
+        limit = 250
         if host and port:
             if re.match('^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$', host):
                 self.mac = host
@@ -93,13 +94,19 @@ class bl:
             if pkt[2].name == 'UDP':
                 pl = pkt[3].fields['load'].encode('hex')
                 ind = pl[-40:]
-                code = pl[72:78]+pl[84:]
+                if len(pl) > self.limit:
+                    code = pl[72:78]+pl[84:] # codes for rm*
+                else:
+                    code = pl[66:80]+pl[82:] # codes for sp*/mp*
                 if not ind in self.exclude and pl.startswith(self.pref):
                     if not code in self.codes.values():
                         self.scanned.append(code)
                         self.codes[code] = code
                         self.storeCode(code)
-                        print 'Got new code:', code
+                        if len(pl) > self.limit:
+                            print 'Got new RM code:', code
+                        else:
+                            print 'Got new SP/MP code:', code
                         print 'Full payload:', pl
         except:
             self.__wrn__('fail to check sniffed packet')
@@ -169,8 +176,8 @@ class bl:
             codes[fn] = self.__loadFromFile__(os.path.join(self.path, fn))
         return codes
 
-    def makeCode(self, pl):
-        return self.pref + self.__randomHex__() + '0000' + pl[0:6] + '00' + self.__randomHex__() + pl[6:]
+    def makeCode(self, src):
+        return self.pref + self.__randomHex__() + '0000' + src[0:6] + '00' + self.__randomHex__() + src[6:]
 
     def storeCode(self, code, name=''):
         if name:
