@@ -3,7 +3,7 @@
 # Broadlink python module by Evgeniy Shumilov <evgeniy.shumilov@gmail.com
 #
 
-import re
+import re, socket
 from os import urandom
 from sys import exit
 from scapy.all import *
@@ -46,24 +46,18 @@ class bl:
         print datetime.strftime(datetime.now(), '%Y.%m.%d %H:%M:%S'), "Warning:", msg
 
     @staticmethod
-    def __str2hex__(s):
-        lst = []
-        for ch in s:
-            hv = hex(ord(ch)).replace('0x', '')
-            if len(hv) == 1:
-                hv = '0'+hv
-            lst.append(hv)
-        return reduce(lambda x,y:x+y, lst)
-
-    @staticmethod
-    def __hex2str__(pl):
-        res = ''
-        for c in xrange(len(pl)/2):
-            map = {'0': 0, '1':1, '2':2, '3':3, '4':4, '5':5, '6':6, '7':7, '8':8, '9':9,
-                    'a':10, 'b':11, 'c':12, 'd':13, 'e':14, 'f':15}
-            b = pl[c*2:c*2+2]
-            res += chr(map[b[0]]*16+map[b[1]])
-        return res
+    def compare(code1, code2):
+        ''' Compare two codes for similarity '''
+        indexes = []
+        l = min(len(code1), len(code2))
+        for c in xrange(l):
+            if code1[c] != code2[c]:
+                indexes.append(c)
+        print "Indexes:", indexes
+        if float(l-len(indexes))/l > 0.92:
+            return True
+        else:
+            return False
 
     @staticmethod
     def __randomHex__(length=4):
@@ -81,41 +75,7 @@ class bl:
                 return packet[3].fields['load']
 
     def __getHexPayload__(self, packet):
-        return self.__str2hex__(self.__getPayload__(packet))
-
-    def brs(self, payload):
-        if payload:
-            p = IP(dst=self.host)/UDP(dport=self.port)
-            p.add_payload(payload)
-            send(p)
-        else:
-            self.__wrn__('empty payload to send')
-
-    def brsr(self, payload):
-        if payload:
-            p = IP(dst=self.host)/UDP(dport=self.port)
-            p.add_payload(payload)
-            pkt = srp1(p)
-            try:
-                if pkt[2].name == 'UDP':
-                    pl = self.__str2hex__(pkt[3].fields['load'])
-                    log = datetime.strftime(datetime.now(), '%s') + ' %s ' + pl[64:68] + ' ' + pl[80:84] + ' ' + pl[104:].replace('0000', ' ')
-                    if pkt[2].fields['dport'] == self.port:
-                        print log % '<'
-                    else:
-                        print log % '>'
-                    code = pl[72:78]+pl[84:]
-                    if not code in self.dcodes:
-                        self.dcodes.append(code)
-                    self.dpayloads.append(pl)
-                    if self.debug:
-                        print "PL:",pl
-                        print "CODE:",code
-            except:
-                self.__wrn__('fail to check packet') 
-        else:
-            self.__wrn__('empty payload to send')
-            return None
+        return self.__getPayload__(packet).encode('hex')
 
     def __getMacByIp__(self, ip):
         if ip:
@@ -131,7 +91,7 @@ class bl:
     def __pktCheck__(self, pkt):
         try:
             if pkt[2].name == 'UDP':
-                pl = self.__str2hex__(pkt[3].fields['load'])
+                pl = pkt[3].fields['load'].encode('hex')
                 ind = pl[-40:]
                 code = pl[72:78]+pl[84:]
                 if not ind in self.exclude and pl.startswith(self.pref):
@@ -147,8 +107,9 @@ class bl:
     def __pktCheckDebug__(self, pkt):
         try:
             if pkt[2].name == 'UDP':
-                pl = self.__str2hex__(pkt[3].fields['load'])
+                pl = pkt[3].fields['load'].encode('hex')
                 if pl.startswith(self.pref) and not pl.endswith('000000000000000000000000000000200'):
+                    self.dpackets.append(pkt)
                     log = datetime.strftime(datetime.now(), '%s') + ' %s ' + pl[64:68] + ' ' + pl[80:84] + ' ' + pl[104:].replace('0000', ' ')
                     if pkt[2].fields['dport'] == self.port:
                         print log % '<'
@@ -161,32 +122,22 @@ class bl:
                     if self.debug:
                         print "PL:",pl
                         print "CODE:",code
-
         except:
             self.__wrn__('fail to check sniffed packet')
 
     def sendPayload(self, payload):
-        self.brs(self.__hex2str__(payload))
+        if payload:
+            udp_socket = socket(AF_INET, SOCK_DGRAM)
+            udp_socket.sendto(payload.decode('hex'), (self.host, self.port))
+            res = udp_socket.recvfrom(1024)[0].encode('hex')
+            return res
 
     def scanDebug(self, verbose=False):
         self.dpayloads = []
         self.dcodes = []
+        self.dpackets = []
         f = 'udp and ether host %s and port %s' % (self.mac, str(self.port))
         self.dscan = sniff(filter=f, prn=self.__pktCheckDebug__)
-
-    @staticmethod
-    def compare(code1, code2):
-        ''' Compare two codes for similarity '''
-        indexes = []
-        l = min(len(code1), len(code2))
-        for c in xrange(l):
-            if code1[c] != code2[c]:
-                indexes.append(c)
-        print "Indexes:", indexes
-        if float(l-len(indexes))/l > 0.92:
-            return True
-        else:
-            return False
 
     def __saveToFile__(self, name, cont):
         if name and cont:
@@ -237,10 +188,8 @@ class bl:
             else:
                 code = name
             if len(code) < 70:
-                self.brs(self.__hex2str__(self.makeCode('b54e6a5a23c10d43b40100000086bf0000aa2af58702019c0ed0c51b3475a0d309')))
-                self.brs(self.__hex2str__(self.makeCode('b54e6a5a23c10d43b40100000026c200005499c2b90027ccbd581e4794641597a9')))
-                self.brs(self.__hex2str__(self.makeCode('b54e6a5a23c10d43b40100000026c200005499c2b90027ccbd581e4794641597a9')))
-            self.brs(self.__hex2str__(self.makeCode(code)))
+                pass # Here I should to send wakeup packet
+            self.sendPayload(self.makeCode(code))
         else:
             self.__wrn__('empty code name to send')
 
@@ -273,10 +222,12 @@ class bl:
         else:
             self.__wrn__('empty code name to show')
 
-b = bl('10.11.11.19')
+b = bl('10.11.11.18')
 
 #TODO: Research method for scan network for detecting broadlink devices
 #TODO: Device -> scan, rename, list, listcodes
 #TODO: Code -> import, export
 #TODO: Codes -> import, export, import from dump
+
+#Format: 'XX' + pl[66:68] + '0000' + pl[72:80] + 'XX' + pl[82:90] + b.mac[6:8] + b.mac[3:5] + b.mac[0:2]
 
